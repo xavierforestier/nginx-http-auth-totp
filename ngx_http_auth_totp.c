@@ -28,6 +28,8 @@ static ngx_int_t ngx_http_auth_totp_set_cookie(ngx_http_request_t *r);
 
 static ngx_int_t ngx_http_auth_totp_set_realm(ngx_http_request_t *r, ngx_str_t *realm);
 
+static ngx_int_t ngx_http_auth_totp_shm_initialise(ngx_shm_zone_t *shm_zone, void *data);
+
 static ngx_int_t ngx_http_auth_totp_validation(ngx_http_request_t *r, ngx_str_t *realm, u_char *key, size_t length, time_t start, time_t step, size_t digits);
 
 
@@ -161,10 +163,12 @@ ngx_http_auth_totp_algorithm_hotp(u_char *key, size_t length, uint64_t count, si
 
 static ngx_int_t 
 ngx_http_auth_totp_check_reuse(ngx_http_request_t *r, uint64_t step) {
-    ngx_http_auth_totp_loc_conf_t *lcf;
+    ngx_http_auth_totp_loc_conf_t *lcf, *slcf;
+    /* ngx_http_auth_totp_shm_t *shm; */
     ngx_str_node_t *n;
     u_char buffer[NGX_HTTP_AUTH_TOTP_BUF_SIZE], *ptr;
     ngx_str_t value;
+    ngx_int_t result;
     uint32_t hash;
 
     /*
@@ -180,39 +184,51 @@ ngx_http_auth_totp_check_reuse(ngx_http_request_t *r, uint64_t step) {
         return 0;
     }
 
-    /* ngx_memzero(buffer, sizeof(buffer)); */
     ptr = ngx_snprintf(buffer, sizeof(buffer), "%ui:%V", step, &r->headers_in.user);
     value.data = buffer;
     value.len = ptr - buffer;
     hash = ngx_crc32_long(value.data, value.len);
-ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "%p: %V -> %ui", &lcf->tree, &value, hash);
-    n = (ngx_str_node_t *) ngx_str_rbtree_lookup(&lcf->tree, &value, hash);
+
+    result = -1;
+    slcf = lcf->shm->data;
+    n = (ngx_str_node_t *) ngx_str_rbtree_lookup(&slcf->sh->tree, &value, hash);
     if (n != NULL) {
-        return 1;
+        result = 1;
+        goto finish;
     }
 
-    n = ngx_pnalloc(lcf->pool, sizeof(ngx_str_node_t));
+    n = ngx_slab_alloc(slcf->shpool, sizeof(ngx_str_node_t));
     if (n == NULL) {
-        return -1;
+        goto finish;
     }
-    n->str.data = ngx_pstrdup(lcf->pool, &value);
+    ptr = ngx_slab_alloc(slcf->shpool, value.len);
+    if (ptr == NULL) {
+        goto finish;
+    }
+    ngx_memcpy(ptr, value.data, value.len);
+    n->str.data = ptr;
     n->str.len = value.len;
     n->node.key = hash;
-    ngx_rbtree_insert(&lcf->tree, &n->node);
+    /* ngx_shmtx_lock(&slcf->shpool->mutex); */
+    ngx_rbtree_insert(&slcf->sh->tree, &n->node);
+    /* ngx_shmtx_unlock(&slcf->shpool->mutex); */
 
-    return 0;
+    result = 0;
+
+finish:
+    return result;
 }
 
 
 static void * 
 ngx_http_auth_totp_create_loc_conf(ngx_conf_t *cf) {
     ngx_http_auth_totp_loc_conf_t *lcf;
+    ngx_str_t name;
 
     lcf = ngx_pcalloc(cf->pool, sizeof(ngx_http_auth_totp_loc_conf_t));
     if (lcf == NULL) {
         return NULL;
     }
-    lcf->pool = cf->pool;
     lcf->realm = NGX_CONF_UNSET_PTR;
     lcf->totp_file = NGX_CONF_UNSET_PTR;
     lcf->length = NGX_CONF_UNSET;
@@ -221,18 +237,26 @@ ngx_http_auth_totp_create_loc_conf(ngx_conf_t *cf) {
     lcf->step = NGX_CONF_UNSET;
     /* lcf->cookie = { 0, NULL }; */
     lcf->expiry = NGX_CONF_UNSET;
-    lcf->reuse = 0;
+    lcf->reuse = NGX_CONF_UNSET;
+
+    lcf->sh = NULL;
+    lcf->shpool = NULL;
 
     /*
-        The red-black tree is used for the recording of successful authentication by 
-        users for a given time-step - This allows for the prevention of TOTP codes 
-        being re-used (for a given user) against the validating system in line with 
-        RFC 6238. The key for this red-black tree is a string with the format 
-        "<step>:<username>" where <step> is the TOTP time-step and <username> is the 
-        authenticating user.
+        The following creates shared memory where successful authentication for 
+        current time-step windows can be recorded. This is to prevent the re-use of 
+        TOTP codes (for a given user) against the validating system in line with 
+        RFC 6238. The use of shared memory is so that this information may be shared 
+        between nginx worker processes. 
     */
 
-    ngx_rbtree_init(&lcf->tree, &lcf->sentinel, ngx_str_rbtree_insert_value);
+    ngx_str_set(&name, MODULE_NAME);
+    lcf->shm = ngx_shared_memory_add(cf, &name, 65536, &ngx_http_auth_totp_module);
+    if (lcf->shm == NULL) {
+        return NULL;
+    }
+    lcf->shm->init = ngx_http_auth_totp_shm_initialise;
+    lcf->shm->data = lcf;
 
     return lcf;
 }
@@ -537,6 +561,13 @@ ngx_http_auth_totp_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
     ngx_conf_merge_sec_value(conf->expiry, prev->expiry, 0);
     ngx_conf_merge_value(conf->reuse, prev->reuse, 0);
 
+    if (conf->sh == NULL) {
+        conf->sh = prev->sh;
+    }
+    if (conf->shpool == NULL) {
+        conf->shpool = prev->shpool;
+    }
+
     return NGX_CONF_OK;
 }
 
@@ -628,6 +659,35 @@ ngx_http_auth_totp_set_realm(ngx_http_request_t *r, ngx_str_t *realm) {
     r->headers_out.www_authenticate->value.len = len;
 
     return NGX_HTTP_UNAUTHORIZED;
+}
+
+
+static ngx_int_t 
+ngx_http_auth_totp_shm_initialise(ngx_shm_zone_t *shm_zone, void *data) {
+    ngx_http_auth_totp_loc_conf_t *olcf = data;
+    ngx_http_auth_totp_loc_conf_t *lcf;
+
+    lcf = shm_zone->data;
+    if (olcf != NULL) {
+        lcf->sh = olcf->sh;
+        lcf->shpool = olcf->shpool;
+        return NGX_OK;
+    }
+
+    lcf->shpool = (ngx_slab_pool_t *) shm_zone->shm.addr;
+    if (shm_zone->shm.exists) {
+        lcf->sh = lcf->shpool->data;
+        return NGX_OK;
+    }
+
+    lcf->sh = ngx_slab_alloc(lcf->shpool, sizeof(ngx_http_auth_totp_shm_t));
+    if (lcf->sh == NULL) {
+        return NGX_ERROR;
+    }
+    lcf->shpool->data = lcf->sh;
+    ngx_rbtree_init(&lcf->sh->tree, &lcf->sh->sentinel, ngx_str_rbtree_insert_value);
+
+    return NGX_OK;
 }
 
 
