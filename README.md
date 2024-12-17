@@ -113,11 +113,11 @@ Enables validation of user name and Time-based One-Time Password (TOTP) using th
 
 ### auth_totp_reuse
 
-# **syntax:** `auth_totp_reuse <on>|<off>`
-# **default:** `off`
-# **context:**  `http`, `server`, `location`, `limit_except`
+* **syntax:** `auth_totp_reuse <on>|<off>`
+* **default:** `off`
+* **context:**  `http`, `server`, `location`, `limit_except`
 
-Enables the reuse of a Time-based One-Time Password (TOTP) within a validity window. While this is non-standard TOTP behaviour per [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238), it provides a convenient manner to ensure a minimum window of validity for generated TOTP codes, even if the TOTP has been presented to the validating system.
+Enables the reuse of a Time-based One-Time Password (TOTP) within a validity window. While this is non-standard behaviour per [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238), it provides a convenient manner to ensure a minimum window of validity for generated TOTP codes, even if the TOTP has already been presented to the validating system.
 
 ### auth_totp_skew
 
