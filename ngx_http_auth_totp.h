@@ -27,6 +27,8 @@ typedef enum {
 ngx_http_auth_totp_state_e;
 
 typedef struct {
+    ngx_pool_t *pool;
+
     ngx_http_complex_value_t *realm;
     ngx_http_complex_value_t *totp_file;
     ngx_int_t length;
@@ -35,6 +37,9 @@ typedef struct {
     time_t step;
     ngx_str_t cookie;
     time_t expiry;
+    ngx_flag_t reuse;
+    ngx_rbtree_t tree;
+    ngx_rbtree_node_t sentinel;
 }
 ngx_http_auth_totp_loc_conf_t;
 

@@ -12,6 +12,8 @@
 
 static uint32_t ngx_http_auth_totp_algorithm_hotp(u_char *key, size_t length, uint64_t count, size_t digits);
 
+static ngx_int_t ngx_http_auth_totp_check_reuse(ngx_http_request_t *r, uint64_t step);
+
 static void * ngx_http_auth_totp_create_loc_conf(ngx_conf_t *cf);
 
 static char * ngx_http_auth_totp_file(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
@@ -67,6 +69,13 @@ static ngx_command_t ngx_http_auth_totp_directives[] = {
             ngx_http_set_complex_value_slot,
             NGX_HTTP_LOC_CONF_OFFSET,
             offsetof(ngx_http_auth_totp_loc_conf_t, realm),
+            NULL },
+
+    { ngx_string("auth_totp_reuse"),
+            NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LMT_CONF|NGX_CONF_TAKE1,
+            ngx_conf_set_flag_slot,
+            NGX_HTTP_LOC_CONF_OFFSET,
+            offsetof(ngx_http_auth_totp_loc_conf_t, reuse),
             NULL },
 
     { ngx_string("auth_totp_skew"),
@@ -150,6 +159,51 @@ ngx_http_auth_totp_algorithm_hotp(u_char *key, size_t length, uint64_t count, si
 }
 
 
+static ngx_int_t 
+ngx_http_auth_totp_check_reuse(ngx_http_request_t *r, uint64_t step) {
+    ngx_http_auth_totp_loc_conf_t *lcf;
+    ngx_str_node_t *n;
+    u_char buffer[NGX_HTTP_AUTH_TOTP_BUF_SIZE], *ptr;
+    ngx_str_t value;
+    uint32_t hash;
+
+    /*
+        This function is intended to check for previous successful authentication by 
+        the current user for the given TOTP step window. If the user has already 
+        successfully authenticated within the given step window, a non-zero value 
+        will returned by this function.
+    */
+
+    lcf = ngx_http_get_module_loc_conf(r, ngx_http_auth_totp_module);
+    /* assert(lcf != NULL); */
+    if (lcf->reuse != 0) {
+        return 0;
+    }
+
+    /* ngx_memzero(buffer, sizeof(buffer)); */
+    ptr = ngx_snprintf(buffer, sizeof(buffer), "%ui:%V", step, &r->headers_in.user);
+    value.data = buffer;
+    value.len = ptr - buffer;
+    hash = ngx_crc32_long(value.data, value.len);
+ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "%p: %V -> %ui", &lcf->tree, &value, hash);
+    n = (ngx_str_node_t *) ngx_str_rbtree_lookup(&lcf->tree, &value, hash);
+    if (n != NULL) {
+        return 1;
+    }
+
+    n = ngx_pnalloc(lcf->pool, sizeof(ngx_str_node_t));
+    if (n == NULL) {
+        return -1;
+    }
+    n->str.data = ngx_pstrdup(lcf->pool, &value);
+    n->str.len = value.len;
+    n->node.key = hash;
+    ngx_rbtree_insert(&lcf->tree, &n->node);
+
+    return 0;
+}
+
+
 static void * 
 ngx_http_auth_totp_create_loc_conf(ngx_conf_t *cf) {
     ngx_http_auth_totp_loc_conf_t *lcf;
@@ -158,6 +212,7 @@ ngx_http_auth_totp_create_loc_conf(ngx_conf_t *cf) {
     if (lcf == NULL) {
         return NULL;
     }
+    lcf->pool = cf->pool;
     lcf->realm = NGX_CONF_UNSET_PTR;
     lcf->totp_file = NGX_CONF_UNSET_PTR;
     lcf->length = NGX_CONF_UNSET;
@@ -166,6 +221,18 @@ ngx_http_auth_totp_create_loc_conf(ngx_conf_t *cf) {
     lcf->step = NGX_CONF_UNSET;
     /* lcf->cookie = { 0, NULL }; */
     lcf->expiry = NGX_CONF_UNSET;
+    lcf->reuse = 0;
+
+    /*
+        The red-black tree is used for the recording of successful authentication by 
+        users for a given time-step - This allows for the prevention of TOTP codes 
+        being re-used (for a given user) against the validating system in line with 
+        RFC 6238. The key for this red-black tree is a string with the format 
+        "<step>:<username>" where <step> is the TOTP time-step and <username> is the 
+        authenticating user.
+    */
+
+    ngx_rbtree_init(&lcf->tree, &lcf->sentinel, ngx_str_rbtree_insert_value);
 
     return lcf;
 }
@@ -413,9 +480,9 @@ ngx_http_auth_totp_handler(ngx_http_request_t *r) {
                     ++length;
                     break;
 
-                case STATE_START:
-                case STATE_STEP:
-                case STATE_LENGTH:
+                case STATE_START:   //  For future use
+                case STATE_STEP:    //  For future use
+                case STATE_LENGTH:  //  For future use
                 case STATE_SKIP:
                 default:
                     if (buffer[index] == LF) {
@@ -468,6 +535,7 @@ ngx_http_auth_totp_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
     ngx_conf_merge_sec_value(conf->step, prev->start, 30);
     ngx_conf_merge_str_value(conf->cookie, prev->cookie, "totp");
     ngx_conf_merge_sec_value(conf->expiry, prev->expiry, 0);
+    ngx_conf_merge_value(conf->reuse, prev->reuse, 0);
 
     return NGX_CONF_OK;
 }
@@ -591,12 +659,21 @@ ngx_http_auth_totp_validation(ngx_http_request_t *r, ngx_str_t *realm, u_char *k
         return ngx_http_auth_totp_set_realm(r, realm);
     }
 
-    count = (now - start) / ((step > 0) ? step : 1);
+    count = (now - start) / ((step > 0) ? step : 30);
     for (index = 0; index <= (uint64_t)lcf->skew; index++) {
         /* assert(count >= index); */
         ngx_snprintf(buffer, sizeof(buffer), "%0*i", 
                 digits, ngx_http_auth_totp_algorithm_hotp(key, length, count - index, digits));
         if (ngx_strncmp(r->headers_in.passwd.data, buffer, digits) == 0) {
+
+            if (ngx_http_auth_totp_check_reuse(r, count - index) != 0) {
+                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                        "%s: attempted password re-use by user \"%*s\"",
+                        MODULE_NAME,
+                        r->headers_in.user.len,
+                        r->headers_in.user.data);
+                break;
+            } 
             ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                     "%s: user \"%*s\", code %*s, skew %ui",
                     MODULE_NAME,

@@ -111,6 +111,14 @@ If the supplied TOTP is of a different length to this value, the authentication 
 
 Enables validation of user name and Time-based One-Time Password (TOTP) using the "HTTP Basic Authentication" protocol. The specified parameter is used as the `realm` for this authentication. This parameter value can contain variables. The special value of `off` cancels the application of any `auth_totp_realm` directive inherited from a higher configuration level.
 
+### auth_totp_reuse
+
+# **syntax:** `auth_totp_reuse <on>|<off>`
+# **default:** `off`
+# **context:**  `http`, `server`, `location`, `limit_except`
+
+Enables the reuse of a Time-based One-Time Password (TOTP) within a validity window. While this is non-standard TOTP behaviour per [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238), it provides a convenient manner to ensure a minimum window of validity for generated TOTP codes, even if the TOTP has been presented to the validating system.
+
 ### auth_totp_skew
 
 * **syntax:** `auth_totp_skew <number>`
