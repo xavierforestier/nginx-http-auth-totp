@@ -29,6 +29,8 @@ ngx_http_auth_totp_state_e;
 typedef struct {
     ngx_rbtree_t tree;
     ngx_rbtree_node_t sentinel;
+
+    ngx_slab_pool_t *shpool;
 }
 ngx_http_auth_totp_shm_t;
 
@@ -43,8 +45,6 @@ typedef struct {
     time_t expiry;
     ngx_flag_t reuse;
 
-    ngx_http_auth_totp_shm_t *sh;
-    ngx_slab_pool_t *shpool;
     ngx_shm_zone_t *shm;
 }
 ngx_http_auth_totp_loc_conf_t;
