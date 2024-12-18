@@ -12,10 +12,6 @@
 
 static uint32_t ngx_http_auth_totp_algorithm_hotp(u_char *key, size_t length, uint64_t count, size_t digits);
 
-static ngx_int_t ngx_http_auth_totp_check_reuse(ngx_http_request_t *r, uint64_t step);
-
-static ngx_int_t ngx_http_auth_totp_cleanup_reuse(ngx_http_request_t *r, uint64_t step);
-
 static void * ngx_http_auth_totp_create_loc_conf(ngx_conf_t *cf);
 
 static char * ngx_http_auth_totp_file(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
@@ -25,6 +21,10 @@ static ngx_int_t ngx_http_auth_totp_handler(ngx_http_request_t *r);
 static ngx_int_t ngx_http_auth_totp_initialise(ngx_conf_t *cf);
 
 static char * ngx_http_auth_totp_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
+
+static ngx_int_t ngx_http_auth_totp_reuse_check(ngx_http_request_t *r, uint64_t step);
+
+static ngx_int_t ngx_http_auth_totp_reuse_cleanup(ngx_http_request_t *r, uint64_t step);
 
 static ngx_int_t ngx_http_auth_totp_set_cookie(ngx_http_request_t *r);
 
@@ -162,113 +162,6 @@ ngx_http_auth_totp_algorithm_hotp(u_char *key, size_t length, uint64_t count, si
             (result[offset + 3] & 0xff);
     //  Step 3: Compute HOTP value
     return (bin % powi[digits]);
-}
-
-
-static ngx_int_t 
-ngx_http_auth_totp_check_reuse(ngx_http_request_t *r, uint64_t step) {
-    ngx_http_auth_totp_loc_conf_t *lcf;
-    ngx_http_auth_totp_shm_t *shm; 
-    ngx_str_node_t *n;
-    u_char buffer[NGX_HTTP_AUTH_TOTP_BUF_SIZE], *ptr;
-    ngx_str_t value;
-    ngx_int_t result;
-    uint32_t hash;
-
-    /*
-        This function is intended to check for previous successful authentication by 
-        the current user for the given TOTP step window. If the user has already 
-        successfully authenticated within the given step window, a non-zero value 
-        will returned by this function.
-    */
-
-    lcf = ngx_http_get_module_loc_conf(r, ngx_http_auth_totp_module);
-    /* assert(lcf != NULL); */
-    if (lcf->reuse != 0) {
-        return 0;
-    }
-
-    ptr = ngx_snprintf(buffer, sizeof(buffer), "%ui:%V", step, &r->headers_in.user);
-    value.data = buffer;
-    value.len = ptr - buffer;
-    hash = ngx_crc32_long(value.data, value.len);
-
-    result = -1;
-    shm = lcf->shm->data;
-    /* assert(shm != NULL); */
-    n = (ngx_str_node_t *) ngx_str_rbtree_lookup(&shm->tree, &value, hash);
-    if (n != NULL) {
-        result = 1;
-        goto finish;
-    }
-
-    n = ngx_slab_alloc(shm->shpool, sizeof(ngx_str_node_t));
-    if (n == NULL) {
-        goto finish;
-    }
-    ptr = ngx_slab_alloc(shm->shpool, value.len);
-    if (ptr == NULL) {
-        goto finish;
-    }
-    ngx_memcpy(ptr, value.data, value.len);
-    n->str.data = ptr;
-    n->str.len = value.len;
-    n->node.key = hash;
-    ngx_shmtx_lock(&shm->shpool->mutex);
-    ngx_rbtree_insert(&shm->tree, &n->node);
-    ngx_shmtx_unlock(&shm->shpool->mutex);
-
-    result = 0;
-
-finish:
-    return result;
-}
-
-
-static ngx_int_t 
-ngx_http_auth_totp_cleanup_reuse(ngx_http_request_t *r, uint64_t step) {
-    ngx_http_auth_totp_loc_conf_t *lcf;
-    ngx_http_auth_totp_shm_t *shm;
-    ngx_rbtree_t *tree;
-    ngx_str_node_t *n;
-    ngx_array_t entries;
-    ngx_uint_t index;
-    ngx_str_t *name;
-    uint32_t hash;
-
-    /*
-        The function is intended to walk through the red-black tree of successful 
-        authentication requests and remove any entries whose associated validity 
-        window has expired. This is primarily to maintain a "clean" memory 
-        environment without any lingering entries associated with expired 
-        authentication entries.
-
-        This is performed by building an array of expired authentication requests
-        and then deleting these _after_ completing the iteration of the red-black
-        tree.
-    */
-
-    lcf = ngx_http_get_module_loc_conf(r, ngx_http_auth_totp_module);
-    /* assert(lcf != NULL); */
-    shm = lcf->shm->data;
-    /* assert(shm != NULL); */
-    tree = &shm->tree;
-
-    if (tree->root != tree->sentinel) {
-        ngx_array_init(&entries, r->pool, 16, sizeof(ngx_str_t));
-        ngx_http_auth_totp_walk(r, step, tree->root, tree->sentinel, &entries);
-        if (entries.nelts > 0) {
-            name = entries.elts;
-            for (index = 0; index < entries.nelts; ++index) {
-                hash = ngx_crc32_long(name[index].data, name[index].len);
-                n = (ngx_str_node_t *) ngx_str_rbtree_lookup(tree, &name[index], hash);
-                /* assert(n != NULL); */
-                ngx_rbtree_delete(&shm->tree, (ngx_rbtree_node_t *) n);
-            }
-        }
-    }
-
-    return 0;
 }
 
 
@@ -617,6 +510,118 @@ ngx_http_auth_totp_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
 }
 
 
+static ngx_int_t 
+ngx_http_auth_totp_reuse_check(ngx_http_request_t *r, uint64_t step) {
+    ngx_http_auth_totp_loc_conf_t *lcf;
+    ngx_http_auth_totp_shm_t *shm; 
+    ngx_str_node_t *n;
+    u_char buffer[NGX_HTTP_AUTH_TOTP_BUF_SIZE], *ptr;
+    ngx_str_t value;
+    ngx_int_t result;
+    uint32_t hash;
+
+    /*
+        This function is intended to check for previous successful authentication by 
+        the current user for the given TOTP step window. If the user has already 
+        successfully authenticated within the given step window, a non-zero value 
+        will returned by this function.
+    */
+
+    lcf = ngx_http_get_module_loc_conf(r, ngx_http_auth_totp_module);
+    /* assert(lcf != NULL); */
+    if (lcf->reuse != 0) {
+        return 0;
+    }
+
+    ptr = ngx_snprintf(buffer, sizeof(buffer), "%ui:%V", step, &r->headers_in.user);
+    value.data = buffer;
+    value.len = ptr - buffer;
+    hash = ngx_crc32_long(value.data, value.len);
+
+    result = -1;
+    shm = lcf->shm->data;
+    /* assert(shm != NULL); */
+    n = (ngx_str_node_t *) ngx_str_rbtree_lookup(&shm->tree, &value, hash);
+    if (n != NULL) {
+        result = 1;
+        goto finish;
+    }
+
+    n = ngx_slab_alloc(shm->shpool, sizeof(ngx_str_node_t));
+    if (n == NULL) {
+        goto finish;
+    }
+    ptr = ngx_slab_alloc(shm->shpool, value.len);
+    if (ptr == NULL) {
+        goto finish;
+    }
+    ngx_memcpy(ptr, value.data, value.len);
+    n->str.data = ptr;
+    n->str.len = value.len;
+    n->node.key = hash;
+    ngx_shmtx_lock(&shm->shpool->mutex);
+    ngx_rbtree_insert(&shm->tree, &n->node);
+    ngx_shmtx_unlock(&shm->shpool->mutex);
+
+    result = 0;
+
+finish:
+    return result;
+}
+
+
+static ngx_int_t 
+ngx_http_auth_totp_reuse_cleanup(ngx_http_request_t *r, uint64_t step) {
+    ngx_http_auth_totp_loc_conf_t *lcf;
+    ngx_http_auth_totp_shm_t *shm;
+    ngx_rbtree_t *tree;
+    ngx_str_node_t *n;
+    ngx_array_t entries;
+    ngx_uint_t index;
+    ngx_str_t *name;
+    uint32_t hash;
+
+    /*
+        The function is intended to walk through the red-black tree of successful 
+        authentication requests and remove any entries whose associated validity 
+        window has expired. This is primarily to maintain a "clean" memory 
+        environment without any lingering entries associated with expired 
+        authentication entries.
+
+        This is performed by building an array of expired authentication requests
+        and then deleting these _after_ completing the iteration of the red-black
+        tree.
+    */
+
+    lcf = ngx_http_get_module_loc_conf(r, ngx_http_auth_totp_module);
+    /* assert(lcf != NULL); */
+    shm = lcf->shm->data;
+    /* assert(shm != NULL); */
+    tree = &shm->tree;
+
+    if (tree->root != tree->sentinel) {
+        ngx_array_init(&entries, r->pool, 16, sizeof(ngx_str_t));
+        ngx_http_auth_totp_walk(r, step, tree->root, tree->sentinel, &entries);
+
+        if (entries.nelts > 0) {
+            name = entries.elts;
+            for (index = 0; index < entries.nelts; ++index) {
+                hash = ngx_crc32_long(name[index].data, name[index].len);
+                n = (ngx_str_node_t *) ngx_str_rbtree_lookup(tree, &name[index], hash);
+                if (n != NULL) {
+                    /* assert(n != NULL); */
+                    ngx_shmtx_lock(&shm->shpool->mutex);
+                    ngx_rbtree_delete(tree, (ngx_rbtree_node_t *) n);
+                    ngx_shmtx_unlock(&shm->shpool->mutex);
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+
 static ngx_int_t
 ngx_http_auth_totp_set_cookie(ngx_http_request_t *r) {
     ngx_http_auth_totp_loc_conf_t *lcf;
@@ -724,7 +729,6 @@ ngx_http_auth_totp_shm_initialise(ngx_shm_zone_t *shm_zone, void *data) {
     }
     ngx_rbtree_init(&shm->tree, &shm->sentinel, ngx_str_rbtree_insert_value);
     shm->shpool = shpool;
-
     shm_zone->data = shm;
 
     return NGX_OK;
@@ -760,14 +764,15 @@ ngx_http_auth_totp_validation(ngx_http_request_t *r, ngx_str_t *realm, u_char *k
     }
 
     count = (now - start) / ((step > 0) ? step : 30);
-    ngx_http_auth_totp_cleanup_reuse(r, count - lcf->skew);
+    ngx_http_auth_totp_reuse_cleanup(r, count - lcf->skew);
+
     for (index = 0; index <= (uint64_t)lcf->skew; index++) {
         /* assert(count >= index); */
         ngx_snprintf(buffer, sizeof(buffer), "%0*i", 
                 digits, ngx_http_auth_totp_algorithm_hotp(key, length, count - index, digits));
         if (ngx_strncmp(r->headers_in.passwd.data, buffer, digits) == 0) {
 
-            if (ngx_http_auth_totp_check_reuse(r, count - index) != 0) {
+            if (ngx_http_auth_totp_reuse_check(r, count - index) != 0) {
                 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                         "%s: attempted password re-use by user \"%*s\"",
                         MODULE_NAME,
