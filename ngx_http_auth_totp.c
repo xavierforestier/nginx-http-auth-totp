@@ -26,6 +26,8 @@ static ngx_int_t ngx_http_auth_totp_reuse_check(ngx_http_request_t *r, uint64_t 
 
 static ngx_int_t ngx_http_auth_totp_reuse_cleanup(ngx_http_request_t *r, uint64_t step);
 
+static void ngx_http_auth_totp_reuse_walk(ngx_http_request_t *r, uint64_t step, ngx_rbtree_node_t *node, ngx_rbtree_node_t *sentinel, ngx_array_t *entries);
+
 static ngx_int_t ngx_http_auth_totp_set_cookie(ngx_http_request_t *r);
 
 static ngx_int_t ngx_http_auth_totp_set_realm(ngx_http_request_t *r, ngx_str_t *realm);
@@ -33,8 +35,6 @@ static ngx_int_t ngx_http_auth_totp_set_realm(ngx_http_request_t *r, ngx_str_t *
 static ngx_int_t ngx_http_auth_totp_shm_initialise(ngx_shm_zone_t *shm_zone, void *data);
 
 static ngx_int_t ngx_http_auth_totp_validation(ngx_http_request_t *r, ngx_str_t *realm, u_char *key, size_t length, time_t start, time_t step, size_t digits);
-
-static void ngx_http_auth_totp_walk(ngx_http_request_t *r, uint64_t step, ngx_rbtree_node_t *node, ngx_rbtree_node_t *sentinel, ngx_array_t *entries);
 
 
 static ngx_int_t powi[] = { 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000 };
@@ -512,6 +512,7 @@ ngx_http_auth_totp_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
 
 static ngx_int_t 
 ngx_http_auth_totp_reuse_check(ngx_http_request_t *r, uint64_t step) {
+    ngx_http_core_loc_conf_t *clcf;
     ngx_http_auth_totp_loc_conf_t *lcf;
     ngx_http_auth_totp_shm_t *shm; 
     ngx_str_node_t *n;
@@ -523,8 +524,11 @@ ngx_http_auth_totp_reuse_check(ngx_http_request_t *r, uint64_t step) {
     /*
         This function is intended to check for previous successful authentication by 
         the current user for the given TOTP step window. If the user has already 
-        successfully authenticated within the given step window, a non-zero value 
-        will returned by this function.
+        successfully authenticated within the given step window for the given 
+        location directive, a non-zero value will returned by this function.
+
+        The inclusion of the URI from the associated location directive allows for 
+        authentication to be independent between location directives.
     */
 
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_auth_totp_module);
@@ -533,7 +537,12 @@ ngx_http_auth_totp_reuse_check(ngx_http_request_t *r, uint64_t step) {
         return 0;
     }
 
-    ptr = ngx_snprintf(buffer, sizeof(buffer), "%ui:%V", step, &r->headers_in.user);
+    clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
+    /* assert(clcf != NULL); */
+    ptr = ngx_snprintf(buffer, sizeof(buffer), "%V:%ui:%V", 
+            &clcf->name, 
+            step, 
+            &r->headers_in.user);
     value.data = buffer;
     value.len = ptr - buffer;
     hash = ngx_crc32_long(value.data, value.len);
@@ -601,7 +610,7 @@ ngx_http_auth_totp_reuse_cleanup(ngx_http_request_t *r, uint64_t step) {
 
     if (tree->root != tree->sentinel) {
         ngx_array_init(&entries, r->pool, 16, sizeof(ngx_str_t));
-        ngx_http_auth_totp_walk(r, step, tree->root, tree->sentinel, &entries);
+        ngx_http_auth_totp_reuse_walk(r, step, tree->root, tree->sentinel, &entries);
 
         if (entries.nelts > 0) {
             name = entries.elts;
@@ -619,6 +628,41 @@ ngx_http_auth_totp_reuse_cleanup(ngx_http_request_t *r, uint64_t step) {
     }
 
     return 0;
+}
+
+
+static void
+ngx_http_auth_totp_reuse_walk(ngx_http_request_t *r, uint64_t step, ngx_rbtree_node_t *node, ngx_rbtree_node_t *sentinel, ngx_array_t *entries) {
+    ngx_str_node_t *n;
+    ngx_str_t *entry, *name;
+    uint64_t value;
+
+    /* assert(node != NULL); */
+    if (node->left != sentinel) {
+        ngx_http_auth_totp_reuse_walk(r, step, node->left, sentinel, entries);
+    }
+    if (node->right != sentinel) {
+        ngx_http_auth_totp_reuse_walk(r, step, node->right, sentinel, entries);
+    }
+
+    n = (ngx_str_node_t *) node;
+    value = strtoll((char *) n->str.data, NULL, 10);
+    if (value < step) {
+        name = ngx_pnalloc(r->pool, sizeof(ngx_str_t));
+        /* assert(name != NULL); */
+        if (name == NULL) {
+            return;
+        }
+        name->data = ngx_pstrdup(r->pool, &n->str);
+        /* assert(name->data != NULL); */
+        if (name->data == NULL) {
+            return;
+        }
+        name->len = n->str.len;
+
+        entry = ngx_array_push(entries);
+        *entry = *name;
+    }
 }
 
 
@@ -795,38 +839,4 @@ ngx_http_auth_totp_validation(ngx_http_request_t *r, ngx_str_t *realm, u_char *k
     return ngx_http_auth_totp_set_realm(r, realm);
 }
 
-
-static void
-ngx_http_auth_totp_walk(ngx_http_request_t *r, uint64_t step, ngx_rbtree_node_t *node, ngx_rbtree_node_t *sentinel, ngx_array_t *entries) {
-    ngx_str_node_t *n;
-    ngx_str_t *entry, *name;
-    uint64_t value;
-
-    /* assert(node != NULL); */
-    if (node->left != sentinel) {
-        ngx_http_auth_totp_walk(r, step, node->left, sentinel, entries);
-    }
-    if (node->right != sentinel) {
-        ngx_http_auth_totp_walk(r, step, node->right, sentinel, entries);
-    }
-
-    n = (ngx_str_node_t *) node;
-    value = strtoll((char *) n->str.data, NULL, 10);
-    if (value < step) {
-        name = ngx_pnalloc(r->pool, sizeof(ngx_str_t));
-        /* assert(name != NULL); */
-        if (name == NULL) {
-            return;
-        }
-        name->data = ngx_pstrdup(r->pool, &n->str);
-        /* assert(name->data != NULL); */
-        if (name->data == NULL) {
-            return;
-        }
-        name->len = n->str.len;
-
-        entry = ngx_array_push(entries);
-        *entry = *name;
-    }
-}
 
