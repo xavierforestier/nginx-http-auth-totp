@@ -26,8 +26,6 @@ static ngx_int_t ngx_http_auth_totp_reuse_check(ngx_http_request_t *r, uint64_t 
 
 static ngx_int_t ngx_http_auth_totp_reuse_cleanup(ngx_http_request_t *r, uint64_t step);
 
-static void ngx_http_auth_totp_reuse_walk(ngx_http_request_t *r, uint64_t step, ngx_rbtree_node_t *node, ngx_rbtree_node_t *sentinel, ngx_array_t *entries);
-
 static ngx_int_t ngx_http_auth_totp_set_cookie(ngx_http_request_t *r);
 
 static ngx_int_t ngx_http_auth_totp_set_realm(ngx_http_request_t *r, ngx_str_t *realm);
@@ -539,9 +537,9 @@ ngx_http_auth_totp_reuse_check(ngx_http_request_t *r, uint64_t step) {
 
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
     /* assert(clcf != NULL); */
-    ptr = ngx_snprintf(buffer, sizeof(buffer), "%V:%ui:%V", 
-            &clcf->name, 
+    ptr = ngx_snprintf(buffer, sizeof(buffer), "%ui:%V:%V", 
             step, 
+            &clcf->name, 
             &r->headers_in.user);
     value.data = buffer;
     value.len = ptr - buffer;
@@ -584,10 +582,12 @@ ngx_http_auth_totp_reuse_cleanup(ngx_http_request_t *r, uint64_t step) {
     ngx_http_auth_totp_loc_conf_t *lcf;
     ngx_http_auth_totp_shm_t *shm;
     ngx_rbtree_t *tree;
+    ngx_rbtree_node_t *node;
     ngx_str_node_t *n;
     ngx_array_t entries;
     ngx_uint_t index;
-    ngx_str_t *name;
+    ngx_str_t *entry, *name;
+    uint64_t value;
     uint32_t hash;
 
     /*
@@ -608,61 +608,50 @@ ngx_http_auth_totp_reuse_cleanup(ngx_http_request_t *r, uint64_t step) {
     /* assert(shm != NULL); */
     tree = &shm->tree;
 
-    if (tree->root != tree->sentinel) {
-        ngx_array_init(&entries, r->pool, 16, sizeof(ngx_str_t));
-        ngx_http_auth_totp_reuse_walk(r, step, tree->root, tree->sentinel, &entries);
+    if (tree->root == tree->sentinel) {
+        return 0;
+    }
 
-        if (entries.nelts > 0) {
-            name = entries.elts;
-            for (index = 0; index < entries.nelts; ++index) {
-                hash = ngx_crc32_long(name[index].data, name[index].len);
-                n = (ngx_str_node_t *) ngx_str_rbtree_lookup(tree, &name[index], hash);
-                if (n != NULL) {
-                    /* assert(n != NULL); */
-                    ngx_shmtx_lock(&shm->shpool->mutex);
-                    ngx_rbtree_delete(tree, (ngx_rbtree_node_t *) n);
-                    ngx_shmtx_unlock(&shm->shpool->mutex);
-                }
+    ngx_array_init(&entries, r->pool, 16, sizeof(ngx_str_t));
+    for (node = ngx_rbtree_min(tree->root, tree->sentinel); 
+            node; 
+            node = ngx_rbtree_next(tree, node)) {
+
+        n = (ngx_str_node_t *) node;
+        value = strtoll((char *) n->str.data, NULL, 10);
+        if (value < step) {
+            name = ngx_pnalloc(r->pool, sizeof(ngx_str_t));
+            /* assert(name != NULL); */
+            if (name == NULL) {
+                return -1;
             }
+            name->data = ngx_pstrdup(r->pool, &n->str);
+            /* assert(name->data != NULL); */
+            if (name->data == NULL) {
+                return -1;
+            }
+            name->len = n->str.len;
+
+            entry = ngx_array_push(&entries);
+            *entry = *name;
+        }
+    }
+
+    for (index = 0, name = entries.elts; 
+            index < entries.nelts; 
+            ++index) {
+
+        hash = ngx_crc32_long(name[index].data, name[index].len);
+        n = (ngx_str_node_t *) ngx_str_rbtree_lookup(tree, &name[index], hash);
+        if (n != NULL) {
+            /* assert(n != NULL); */
+            ngx_shmtx_lock(&shm->shpool->mutex);
+            ngx_rbtree_delete(tree, (ngx_rbtree_node_t *) n);
+            ngx_shmtx_unlock(&shm->shpool->mutex);
         }
     }
 
     return 0;
-}
-
-
-static void
-ngx_http_auth_totp_reuse_walk(ngx_http_request_t *r, uint64_t step, ngx_rbtree_node_t *node, ngx_rbtree_node_t *sentinel, ngx_array_t *entries) {
-    ngx_str_node_t *n;
-    ngx_str_t *entry, *name;
-    uint64_t value;
-
-    /* assert(node != NULL); */
-    if (node->left != sentinel) {
-        ngx_http_auth_totp_reuse_walk(r, step, node->left, sentinel, entries);
-    }
-    if (node->right != sentinel) {
-        ngx_http_auth_totp_reuse_walk(r, step, node->right, sentinel, entries);
-    }
-
-    n = (ngx_str_node_t *) node;
-    value = strtoll((char *) n->str.data, NULL, 10);
-    if (value < step) {
-        name = ngx_pnalloc(r->pool, sizeof(ngx_str_t));
-        /* assert(name != NULL); */
-        if (name == NULL) {
-            return;
-        }
-        name->data = ngx_pstrdup(r->pool, &n->str);
-        /* assert(name->data != NULL); */
-        if (name->data == NULL) {
-            return;
-        }
-        name->len = n->str.len;
-
-        entry = ngx_array_push(entries);
-        *entry = *name;
-    }
 }
 
 
