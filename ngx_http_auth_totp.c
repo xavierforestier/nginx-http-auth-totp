@@ -529,16 +529,22 @@ ngx_http_auth_totp_reuse_check(ngx_http_request_t *r, uint64_t step) {
         authentication to be independent between location directives.
     */
 
+    clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
+    /* assert(clcf != NULL); */
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_auth_totp_module);
     /* assert(lcf != NULL); */
     if (lcf->reuse != 0) {
         return 0;
     }
 
-    clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
-    /* assert(clcf != NULL); */
-    ptr = ngx_snprintf(buffer, sizeof(buffer), "%ui:%V:%V", 
-            step, 
+    /*
+        The step value must be at the start of the red-black tree key - This is so 
+        as to facilitate comparison actions in the ngx_http_auth_totp_reuse_cleanup 
+        function.
+    */
+
+    ptr = ngx_snprintf(buffer, sizeof(buffer), "%ui:%V:%V",
+            step,
             &clcf->name, 
             &r->headers_in.user);
     value.data = buffer;

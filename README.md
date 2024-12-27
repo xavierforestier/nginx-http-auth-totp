@@ -42,6 +42,7 @@ server {
         auth_totp_realm "Protected";
         auth_totp_file /etc/nginx/totp.conf;
         auth_totp_length 8;
+        auth_totp_reuse off;
         auth_totp_skew 1;
         auth_totp_step 1m;
         auth_totp_cookie "totp-session";
