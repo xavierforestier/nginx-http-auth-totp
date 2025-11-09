@@ -780,6 +780,7 @@ ngx_http_auth_totp_validation(ngx_http_request_t *r, ngx_str_t *realm, u_char *k
     ngx_http_auth_totp_loc_conf_t *lcf;
     uint64_t count, index;
     u_char buffer[8];
+    char fmt[] = "%00uD"; // Don't change without adjusting manipulation below
     time_t now;
 
     /*
@@ -797,6 +798,7 @@ ngx_http_auth_totp_validation(ngx_http_request_t *r, ngx_str_t *realm, u_char *k
     if (r->headers_in.passwd.len != digits) {
         return ngx_http_auth_totp_set_realm(r, realm);
     }
+    fmt[2] = '0' + digits;
 
     now = time(NULL);
     if (start > now) {
@@ -808,8 +810,8 @@ ngx_http_auth_totp_validation(ngx_http_request_t *r, ngx_str_t *realm, u_char *k
 
     for (index = 0; index <= (uint64_t)lcf->skew; index++) {
         /* assert(count >= index); */
-        ngx_snprintf(buffer, sizeof(buffer), "%0*i", 
-                digits, ngx_http_auth_totp_algorithm_hotp(key, length, count - index, digits));
+        ngx_snprintf(buffer, sizeof(buffer), fmt,
+                ngx_http_auth_totp_algorithm_hotp(key, length, count - index, digits));
         if (ngx_strncmp(r->headers_in.passwd.data, buffer, digits) == 0) {
 
             if (ngx_http_auth_totp_reuse_check(r, count - index) != 0) {
