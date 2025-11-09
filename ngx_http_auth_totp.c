@@ -361,7 +361,6 @@ ngx_http_auth_totp_handler(ngx_http_request_t *r) {
     length = 0;
     offset = 0;
     state = STATE_USER;
-    rc = NGX_OK;
 
     for (;;) {
         rv = ngx_read_file(&file, buffer + count, NGX_HTTP_AUTH_TOTP_BUF_SIZE - count, offset);
@@ -457,6 +456,8 @@ ngx_http_auth_totp_handler(ngx_http_request_t *r) {
         }
         offset += rv;
     }
+
+    rc = ngx_http_auth_totp_set_realm(r, &realm);
 
 finish:
     if (ngx_close_file(file.fd) == NGX_FILE_ERROR) {
