@@ -457,6 +457,8 @@ ngx_http_auth_totp_handler(ngx_http_request_t *r) {
         }
         offset += rv;
     }
+    // user not found in TOTP file
+    rc = ngx_http_auth_totp_set_realm(r, &realm);
 
 finish:
     if (ngx_close_file(file.fd) == NGX_FILE_ERROR) {
