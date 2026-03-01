@@ -5,6 +5,10 @@ jobs:
   tests:    
     runs-on: ubuntu-latest
     steps:
-    - run: >
-        python -v
+      - uses: actions/checkout@v6
+      - name: Build module
+        run: >
+          ./configure --add-module=/path/to/nginx-http-auth-totp
+          make
+          make install
       
