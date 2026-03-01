@@ -37,7 +37,7 @@ echo "::endgroup::"
 [ "${http_code}" == "200" ] || exit 4
 
 echo -en " Test 5: \033[1mTest a valid standard token (6 digits / 30sec)\033[0m... "
-http_code=$( curl -u:admin:$( python tests/getOTP.py ${SECRET} ) -sio /tmp/last -w "%{http_code}" http://localhost:8080/priv6d30s/index.html )
+http_code=$( curl -u admin:$( python tests/getOTP.py ${SECRET} ) -sio /tmp/last -w "%{http_code}" http://localhost:8080/priv6d30s/index.html )
 [ "${http_code}" == "200" ] || echo -e "❌ \033[1;31mFAILED\033[0m (expected 200, but got ${http_code})"
 [ "${http_code}" == "200" ] && echo -e "✅ \033[1;32mPASSED\033[0m"
 echo "::group::Response from nginx"
@@ -46,7 +46,7 @@ echo "::endgroup::"
 [ "${http_code}" == "200" ] || exit 5
 
 echo -en " Test 6: \033[1mTest a valid non-standard token (8 digits / 60sec)\033[0m... "
-http_code=$( curl -u:admin:$( python tests/getOTP.py ${SECRET} -d 60 -l 8 ) -sio /tmp/last -w "%{http_code}" http://localhost:8080/priv8d60s/index.html )
+http_code=$( curl -u admin:$( python tests/getOTP.py ${SECRET} -d 60 -l 8 ) -sio /tmp/last -w "%{http_code}" http://localhost:8080/priv8d60s/index.html )
 [ "${http_code}" == "200" ] || echo -e "❌ \033[1;31mFAILED\033[0m (expected 200, but got ${http_code})"
 [ "${http_code}" == "200" ] && echo -e "✅ \033[1;32mPASSED\033[0m"
 echo "::group::Response from nginx"
@@ -55,7 +55,7 @@ echo "::endgroup::"
 [ "${http_code}" == "200" ] || exit 6
 
 echo -en " Test 7: \033[1mA wrong user with a valid standard token (6 digits / 30sec) is reject\033[0m... "
-http_code=$( curl -u:dummy:$( python tests/getOTP.py ${SECRET} ) -sio /tmp/last -w "%{http_code}" http://localhost:8080/priv6d30s/index.html )
+http_code=$( curl -u dummy:$( python tests/getOTP.py ${SECRET} ) -sio /tmp/last -w "%{http_code}" http://localhost:8080/priv6d30s/index.html )
 [ "${http_code}" == "401" ] || echo -e "❌ \033[1;31mFAILED\033[0m (expected 401, but got ${http_code})"
 [ "${http_code}" == "401" ] && echo -e "✅ \033[1;32mPASSED\033[0m"
 echo "::group::Response from nginx"
@@ -64,7 +64,7 @@ echo "::endgroup::"
 [ "${http_code}" == "401" ] || exit 7
 
 echo -en " Test 8: \033[1mA wrong user with a valid non-standard token (8 digits / 60sec) is reject\033[0m "
-http_code=$( curl -u:dummy:$( python tests/getOTP.py ${SECRET} -d 60 -l 8 ) -sio /tmp/last -w "%{http_code}" http://localhost:8080/priv8d60s/index.html )
+http_code=$( curl -u dummy:$( python tests/getOTP.py ${SECRET} -d 60 -l 8 ) -sio /tmp/last -w "%{http_code}" http://localhost:8080/priv8d60s/index.html )
 [ "${http_code}" == "401" ] || echo -e "❌ \033[1;31mFAILED\033[0m (expected 401, but got ${http_code})"
 [ "${http_code}" == "401" ] && echo -e "✅ \033[1;32mPASSED\033[0m"
 echo "::group::Response from nginx"
