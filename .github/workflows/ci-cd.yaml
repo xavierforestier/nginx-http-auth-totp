@@ -39,5 +39,6 @@ jobs:
       - name: Run tests
         run: |
           find /usr/local/nginx
-          sudo nohup nginx -c /etc/nginx/nginx.conf &
+          sudo nginx -c /etc/nginx/nginx.conf
           bash tests/test.sh
+          cat /usr/local/nginx/logs/*
