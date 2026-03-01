@@ -5,11 +5,17 @@ jobs:
   tests:    
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
       - name: Install build Tools
         run: |
           sudo apt-get update
-          sudo apt install build-essential -y
+          sudo apt install build-essential  curl libpcre2-dev libssl-dev zlib1g-dev libgd-dev -y
+      - name: Install nginx sources
+        run: |
+          NGINX_VERSION=1.29.5
+          curl -fLO --progress-bar https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
+          tar -xzf nginx-${NGINX_VERSION}.tar.gz
+          cd nginx-${NGINX_VERSION}
+      - uses: actions/checkout@v6
       - name: Build module
         run: |
           ./configure --add-module=/path/to/nginx-http-auth-totp
