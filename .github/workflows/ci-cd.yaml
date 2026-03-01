@@ -15,16 +15,28 @@ jobs:
       - name: Install pre-requisites
         run: |
           sudo apt-get update
-          sudo apt install build-essential  curl libpcre2-dev libssl-dev zlib1g-dev libgd-dev nginx -y
+          sudo apt install build-essential  curl libpcre2-dev libssl-dev zlib1g-dev libgd-dev -y
       - name: Install nginx sources
         run: |
           curl -fLO --progress-bar https://nginx.org/download/nginx-${{ inputs.nginx-version }}.tar.gz
           tar -xzf nginx-${{ inputs.nginx-version }}.tar.gz
           cd nginx-${{ inputs.nginx-version }}
-      - name: Build module
+      - name: Configure module
         run: |
           cd nginx-${{ inputs.nginx-version }}
           ./configure --add-module=..
+      - name: Build module
+        run: |
+          cd nginx-${{ inputs.nginx-version }}
           make
+      - name: Install module
+        run: |
+          cd nginx-${{ inputs.nginx-version }}
           sudo make install
-      
+      - name: Setup nginx
+        run: |
+          cp tests/*.conf /etc/nginx/
+      - name: Run tests
+        run: |
+          nohup /usr/local/nginx/nginx &
+          bash tests/test.sh
