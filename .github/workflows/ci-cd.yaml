@@ -1,6 +1,12 @@
 name: "Tests automation"
 on:
   workflow_dispatch:
+    inputs:
+      nginx-version:
+        description: 'nginx version'
+        default: "1.29.5"
+        required: true
+        type: string
 jobs:
   tests:    
     runs-on: ubuntu-latest
@@ -12,18 +18,15 @@ jobs:
           sudo apt install build-essential  curl libpcre2-dev libssl-dev zlib1g-dev libgd-dev nginx -y
       - name: Install nginx sources
         run: |
-          NGINX_VERSION=1.29.5
-          curl -fLO --progress-bar https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
-          tar -xzf nginx-${NGINX_VERSION}.tar.gz
-          cd nginx-${NGINX_VERSION}
+          curl -fLO --progress-bar https://nginx.org/download/nginx-${{ inputs.nginx-version }}.tar.gz
+          tar -xzf nginx-${{ inputs.nginx-version }}.tar.gz
+          cd nginx-${{ inputs.nginx-version }}
           cp ../*.h .
           cp ../*.c .
           cp ../config .
-          pwd
-          ls -lR
       - name: Build module
         run: |
-          cd nginx-${NGINX_VERSION}
+          cd nginx-${{ inputs.nginx-version }}
           ./configure --add-module=/path/to/nginx-http-auth-totp
           make
           make install
