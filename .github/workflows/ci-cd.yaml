@@ -39,6 +39,5 @@ jobs:
       - name: Run tests
         run: |
           find /usr/local/nginx
-          sudo nginx -c /etc/nginx/nginx.conf
+          sudo /usr/local/nginx/sbin/nginx -c /etc/nginx/nginx.conf -e stderr
           bash tests/test.sh
-          cat /usr/local/nginx/logs/*
