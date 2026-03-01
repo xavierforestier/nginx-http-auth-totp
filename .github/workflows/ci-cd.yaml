@@ -24,7 +24,7 @@ jobs:
       - name: Build module
         run: |
           cd nginx-${{ inputs.nginx-version }}
-          ./configure --add-module=../nginx-http-auth-totp
+          ./configure --add-module=..
           make
           make install
       
