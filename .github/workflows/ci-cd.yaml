@@ -6,10 +6,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Install build Tools
+      - name: Install pre-requisites
         run: |
           sudo apt-get update
-          sudo apt install build-essential  curl libpcre2-dev libssl-dev zlib1g-dev libgd-dev -y
+          sudo apt install build-essential  curl libpcre2-dev libssl-dev zlib1g-dev libgd-dev nginx -y
       - name: Install nginx sources
         run: |
           NGINX_VERSION=1.29.5
@@ -19,6 +19,8 @@ jobs:
           cp ../*.h .
           cp ../*.c .
           cp ../config .
+          pwd
+          ls -lR
       - name: Build module
         run: |
           ./configure --add-module=/path/to/nginx-http-auth-totp
