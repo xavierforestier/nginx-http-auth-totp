@@ -40,10 +40,10 @@ jobs:
           sudo mkdir /usr/local/nginx/html/priv6d30s
           sudo mkdir /usr/local/nginx/html/priv6d30s/public
           sudo mkdir /usr/local/nginx/html/priv8d60s
-          sudo echo "I'm public" > /usr/local/nginx/html/public/index.html
-          sudo echo "I'm private" > /usr/local/nginx/html/priv6d30s/index.html
-          sudo echo "I'm public" > /usr/local/nginx/html/priv6d30s/public/index.html
-          sudo echo "I'm private" > /usr/local/nginx/html/priv8d60s/index.html
+          sudo bash "echo \"I'm public\" > /usr/local/nginx/html/public/index.html"
+          sudo echo "echo \"I'm private\" > /usr/local/nginx/html/priv6d30s/index.html"
+          sudo cp /usr/local/nginx/html/public/index.html /usr/local/nginx/html/priv6d30s/public/
+          sudo cp /usr/local/nginx/html/priv6d30s/index.html /usr/local/nginx/html/priv8d60s/
           ls -lR  /usr/local/nginx/html/
       - name: Run tests
         run: |
