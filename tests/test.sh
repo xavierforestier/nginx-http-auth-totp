@@ -1,4 +1,4 @@
-SECRET=ZK2OTLT4AYP3TBYHYLJ45CGYD5RKD7HS
+SECRET=F2552WNNS6FKWIOZRHPRW2HDSKCEWWNS
 
 echo -en " Test 1: \033[1mModule do nothing without auth_totp_realm directive\033[0m... "
 http_code=$( curl -sio /tmp/last -w "%{http_code}" http://localhost:8080/public/index.html )
