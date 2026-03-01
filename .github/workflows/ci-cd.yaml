@@ -36,8 +36,16 @@ jobs:
       - name: Setup nginx
         run: |
           sudo cp tests/*.conf /etc/nginx/
+          mkdir /usr/local/nginx/html/public          
+          mkdir /usr/local/nginx/html/priv6d30s
+          mkdir /usr/local/nginx/html/priv6d30s/public
+          mkdir /usr/local/nginx/html/priv8d60s
+          echo "I'm public" > /usr/local/nginx/html/public/index.html
+          echo "I'm private" > /usr/local/nginx/html/priv6d30s/index.html
+          echo "I'm public" > /usr/local/nginx/html/priv6d30s/public/index.html
+          echo "I'm private" > /usr/local/nginx/html/priv8d60s/index.html
+          ls -lR  /usr/local/nginx/html/
       - name: Run tests
         run: |
-          find /usr/local/nginx
           sudo /usr/local/nginx/sbin/nginx -c /etc/nginx/nginx.conf -e stderr
           bash tests/test.sh
