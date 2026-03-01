@@ -26,5 +26,5 @@ jobs:
           cd nginx-${{ inputs.nginx-version }}
           ./configure --add-module=..
           make
-          make install
+          sudo make install
       
