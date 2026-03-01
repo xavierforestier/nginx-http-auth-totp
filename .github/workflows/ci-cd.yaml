@@ -1,0 +1,10 @@
+name: "Tests automation"
+on:
+  workflow_dispatch:
+jobs:
+  tests:    
+    runs-on: ubuntu-latest
+    steps:
+    - run: >
+        python -v
+      
