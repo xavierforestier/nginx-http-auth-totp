@@ -23,6 +23,7 @@ jobs:
           ls -lR
       - name: Build module
         run: |
+          cd nginx-${NGINX_VERSION}
           ./configure --add-module=/path/to/nginx-http-auth-totp
           make
           make install
