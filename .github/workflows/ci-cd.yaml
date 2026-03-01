@@ -15,7 +15,7 @@ jobs:
       - name: Install pre-requisites
         run: |
           sudo apt-get update
-          sudo apt install build-essential  curl libpcre2-dev libssl-dev zlib1g-dev libgd-dev python3-pyotp -y
+          sudo apt install build-essential curl python3-pyotp ntpdate -y
           sudo ntpdate
       - name: Install nginx sources
         run: |
