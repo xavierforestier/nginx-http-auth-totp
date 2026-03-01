@@ -21,14 +21,10 @@ jobs:
           curl -fLO --progress-bar https://nginx.org/download/nginx-${{ inputs.nginx-version }}.tar.gz
           tar -xzf nginx-${{ inputs.nginx-version }}.tar.gz
           cd nginx-${{ inputs.nginx-version }}
-          cp ../*.h .
-          cp ../*.c .
-          cp ../config .
-          ls /usr/include/
       - name: Build module
         run: |
           cd nginx-${{ inputs.nginx-version }}
-          ./configure --add-module=/usr/include/nginx/http/modules/nginx-http-auth-totp
+          ./configure --add-module=../nginx-http-auth-totp
           make
           make install
       
