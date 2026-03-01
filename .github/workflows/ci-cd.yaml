@@ -38,5 +38,7 @@ jobs:
           sudo cp tests/*.conf /etc/nginx/
       - name: Run tests
         run: |
-          sudo nohup /usr/local/nginx/nginx &
+          which nginx
+          ls /usr/local/*
+          sudo nohup nginx -c /etc/nginx/nginx.conf &
           bash tests/test.sh
