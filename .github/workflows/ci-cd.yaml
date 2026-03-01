@@ -24,10 +24,11 @@ jobs:
           cp ../*.h .
           cp ../*.c .
           cp ../config .
+          ls /usr/include/
       - name: Build module
         run: |
           cd nginx-${{ inputs.nginx-version }}
-          ./configure --add-module=/path/to/nginx-http-auth-totp
+          ./configure --add-module=/usr/include/nginx/http/modules/nginx-http-auth-totp
           make
           make install
       
