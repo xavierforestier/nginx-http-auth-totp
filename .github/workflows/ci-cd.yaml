@@ -5,6 +5,7 @@ jobs:
   tests:    
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - name: Install build Tools
         run: |
           sudo apt-get update
@@ -15,7 +16,9 @@ jobs:
           curl -fLO --progress-bar https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
           tar -xzf nginx-${NGINX_VERSION}.tar.gz
           cd nginx-${NGINX_VERSION}
-      - uses: actions/checkout@v6
+          cp ../*.h .
+          cp ../*.c .
+          cp ../config .
       - name: Build module
         run: |
           ./configure --add-module=/path/to/nginx-http-auth-totp
