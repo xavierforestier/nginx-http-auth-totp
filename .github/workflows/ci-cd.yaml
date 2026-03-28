@@ -45,6 +45,7 @@ jobs:
           sudo bash -c "echo \"I'm private\" > /usr/local/nginx/html/priv6d30s/index.html"
           sudo cp /usr/local/nginx/html/public/index.html /usr/local/nginx/html/priv6d30s/public/
           sudo cp /usr/local/nginx/html/priv6d30s/index.html /usr/local/nginx/html/priv8d60s/
+          ls -l /etc/nginx
       - name: Run tests
         run: |
           sudo /usr/local/nginx/sbin/nginx -c /etc/nginx/nginx.conf -e stderr
