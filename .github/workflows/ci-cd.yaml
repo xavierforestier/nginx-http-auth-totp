@@ -3,14 +3,11 @@ on:
   push:
   pull_request: 
   workflow_dispatch:
-    inputs:
-      nginx-version:
-        description: 'nginx version'
-        default: "1.29.5"
-        required: true
-        type: string
 jobs:
-  tests:    
+  tests:
+    strategy:
+      matrix:
+        nginx: ["https://nginx.org/en/CHANGES-1.28", "https://nginx.org/en/CHANGES"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -21,20 +18,17 @@ jobs:
           sudo ntpdate -u 0.pool.ntp.org
       - name: Install nginx sources
         run: |
-          curl -fLO --progress-bar https://nginx.org/download/nginx-${{ inputs.nginx-version }}.tar.gz
-          tar -xzf nginx-${{ inputs.nginx-version }}.tar.gz
-          cd nginx-${{ inputs.nginx-version }}
-      - name: Configure module
-        run: |
-          cd nginx-${{ inputs.nginx-version }}
+          NGINX_VERSION=$( curl --silent ${{ matrix.nginx }} -q | grep "Changes with nginx" | head -n1 | cut -d\  -f4 )     
+          # Download
+          curl -fLO --progress-bar https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
+          # extract
+          tar -xzf nginx-${NGINX_VERSION}.tar.gz
+          cd nginx-${NGINX_VERSION}
+          # configure
           ./configure --add-module=..
-      - name: Build module
-        run: |
-          cd nginx-${{ inputs.nginx-version }}
+          # build
           make
-      - name: Install module
-        run: |
-          cd nginx-${{ inputs.nginx-version }}
+          # install
           sudo make install
       - name: Setup nginx
         run: |
