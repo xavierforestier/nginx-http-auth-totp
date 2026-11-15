@@ -13,6 +13,18 @@ jobs:
           - "https://nginx.org/en/CHANGES-1.28"
           - "https://nginx.org/en/CHANGES-1.26"
           - "https://nginx.org/en/CHANGES-1.24"
+          - "https://nginx.org/en/CHANGES-1.22"
+          - "https://nginx.org/en/CHANGES-1.20"
+          - "https://nginx.org/en/CHANGES-1.18"
+          - "https://nginx.org/en/CHANGES-1.16"
+          - "https://nginx.org/en/CHANGES-1.14"
+          - "https://nginx.org/en/CHANGES-1.12"
+          - "https://nginx.org/en/CHANGES-1.10"
+          - "https://nginx.org/en/CHANGES-1.8"
+          - "https://nginx.org/en/CHANGES-1.6"
+          - "https://nginx.org/en/CHANGES-1.4"
+          - "https://nginx.org/en/CHANGES-1.2"
+          - "https://nginx.org/en/CHANGES-1.0"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
