@@ -15,7 +15,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt install build-essential curl python3-pyotp -y
-          sudo timedatectl status
       - name: Install nginx sources
         run: |
           NGINX_VERSION=$( curl --silent ${{ matrix.nginx }} -q | grep "Changes with nginx" | head -n1 | cut -d\  -f4 )     
