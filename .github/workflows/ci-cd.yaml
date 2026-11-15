@@ -7,7 +7,12 @@ jobs:
   tests:
     strategy:
       matrix:
-        nginx: ["https://nginx.org/en/CHANGES-1.30", "https://nginx.org/en/CHANGES"]
+        nginx: 
+          - "https://nginx.org/en/CHANGES"
+          - "https://nginx.org/en/CHANGES-1.30"
+          - "https://nginx.org/en/CHANGES-1.28"
+          - "https://nginx.org/en/CHANGES-1.26"
+          - "https://nginx.org/en/CHANGES-1.24"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
