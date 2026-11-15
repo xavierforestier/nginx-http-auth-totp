@@ -14,8 +14,9 @@ jobs:
       - name: Install pre-requisites
         run: |
           sudo apt-get update
-          sudo apt install build-essential curl python3-pyotp ntpdate -y
-          sudo ntpdate -u 0.pool.ntp.org
+          sudo apt install build-essential curl python3-pyotp systemd-timesyncd -y
+          sudo cat /etc/systemd/timesyncd.conf 
+          sudo timedatectl set-ntp true
       - name: Install nginx sources
         run: |
           NGINX_VERSION=$( curl --silent ${{ matrix.nginx }} -q | grep "Changes with nginx" | head -n1 | cut -d\  -f4 )     
