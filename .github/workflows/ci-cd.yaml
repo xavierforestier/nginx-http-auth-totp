@@ -14,7 +14,6 @@ jobs:
           - "https://nginx.org/en/CHANGES-1.26"
           - "https://nginx.org/en/CHANGES-1.24"
           - "https://nginx.org/en/CHANGES-1.22"
-          - "https://nginx.org/en/CHANGES-1.20"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
